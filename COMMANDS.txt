@@ -1,0 +1,192 @@
+=====================================================================
+ WiFi-CSI HUMAN ACTIVITY AND FALL DETECTION  -  ALL COMMANDS USED
+ Hardware: 1x ESP32 WROOM-32 (receiver) + home WiFi router (transmitter)
+ Software: ESP-IDF v5.5.5, Python 3.11, Windows PowerShell
+=====================================================================
+
+NOTE: Run the idf.py commands in the "ESP-IDF PowerShell".
+      Always run them from the project folder (not from the esp-idf folder).
+      Change COM6 to your own port. Replace <...> with your own values.
+
+
+---------------------------------------------------------------------
+PART 0 - ONE-TIME SETUP
+---------------------------------------------------------------------
+
+0.1  Get the esp-csi tool from Espressif:
+     git clone https://github.com/espressif/esp-csi.git C:\MyProjects\esp-csi
+
+0.2  Go to the project folder:
+     cd C:\MyProjects\esp-csi\examples\get-started\csi_recv_router
+
+0.3  Firmware change made in main/app_main.c (disable WiFi power-save).
+     The end of app_main() looks like this:
+         ESP_ERROR_CHECK(example_connect());
+         esp_wifi_set_ps(WIFI_PS_NONE);
+         wifi_csi_init();
+         wifi_ping_router_start();
+
+0.4  Set the WiFi name and password the ESP32 should connect to:
+     idf.py menuconfig
+       -> Example Connection Configuration -> WiFi SSID      (Enter, type name, Enter)
+       -> Example Connection Configuration -> WiFi Password  (Enter, type password, Enter)
+       -> Press S to save, then Q to quit
+
+0.5  Build, flash and open the monitor:
+     idf.py -p COM6 flash monitor
+
+0.6  Install the Python packages:
+     python -m pip install pandas numpy scipy scikit-learn matplotlib joblib streamlit
+
+
+---------------------------------------------------------------------
+PART 1 - CAPTURE CSI DATA
+---------------------------------------------------------------------
+
+1.1  Open the project folder:
+     cd C:\MyProjects\esp-csi\examples\get-started\csi_recv_router
+
+1.2  Start the serial monitor:
+     idf.py -p COM6 monitor
+
+1.3  Capture one sample (manual steps, no command):
+       - Press the EN/RST button on the ESP32
+       - Wait until the log shows "got ip"
+       - Perform ONE activity (walk, fall on a mattress, sit/stand, ...)
+       - Copy the CSI_DATA lines
+       - Paste into Notepad, Save As .txt  (Encoding: UTF-8)
+         in the same folder, e.g. falling_01.txt
+
+1.4  Stop the monitor:
+     Ctrl + ]
+
+Why reset each time: the router only returns about 2-3 CSI replies per
+connection, so data is collected in many short reset cycles.
+
+
+---------------------------------------------------------------------
+PART 2 - PARSE RAW CAPTURES INTO LABELED CSV FILES
+---------------------------------------------------------------------
+
+2.1  Parse one file:
+     python parse_csi_log.py <filename>.txt <label>
+
+     Example:
+     python parse_csi_log.py test_falling_live.txt falling
+
+2.2  Parse many files at once (the 1-second delay avoids filename
+     collisions, because output names use a timestamp in seconds):
+     Get-ChildItem <prefix>_*.txt | ForEach-Object { python parse_csi_log.py $_.Name <label>; Start-Sleep -Seconds 1 }
+
+     Example:
+     Get-ChildItem sitstand_*.txt | ForEach-Object { python parse_csi_log.py $_.Name sitting_standing; Start-Sleep -Seconds 1 }
+
+2.3  Count how many samples you got for a label:
+     (Get-ChildItem csi_<label>_*.csv | Get-Content | Measure-Object -Line).Lines
+
+Labels used: empty, walking, falling, sitting_standing, lying_down,
+             running, bending, one_person, two_person
+
+
+---------------------------------------------------------------------
+PART 3 - BUILD THE DATASET AND TRAIN THE MODEL
+---------------------------------------------------------------------
+
+3.1  Combine all labeled CSVs into combined_dataset.csv:
+     python load_dataset.py
+
+3.2  Train SVM and Random Forest, print accuracy, save the best model
+     (creates trained_model.pkl, scaler.pkl, label_encoder.pkl):
+     python train_classifier.py
+
+     Note: every label you want trained must be listed in USABLE_LABELS
+     inside train_classifier.py, otherwise its data is silently dropped.
+
+Results:
+     3 classes  (583 samples)   Random Forest 84.25%   SVM 82.88%
+     7 classes  (805 samples)   Random Forest 74.75%   SVM 71.29%
+     9 classes  (1078 samples)  Random Forest 70.00%   SVM 64.44%
+
+
+---------------------------------------------------------------------
+PART 4 - CLASSIFY A NEW CAPTURE
+---------------------------------------------------------------------
+
+4.1  Classify a raw .txt capture (not the CSV) from the command line:
+     python classify_batch.py <filename>.txt
+
+     Example:
+     python classify_batch.py demo_falling.txt
+
+
+---------------------------------------------------------------------
+PART 5 - DASHBOARD
+---------------------------------------------------------------------
+
+5.1  Launch the Streamlit dashboard:
+     python -m streamlit run dashboard.py
+
+5.2  In the browser: upload a capture .txt file to see the verdict card,
+     the class breakdown chart and the per-reading table.
+     Stop the dashboard with Ctrl + C in the terminal.
+
+
+---------------------------------------------------------------------
+PART 6 - DEMO FLOW (video / live presentation)
+---------------------------------------------------------------------
+
+  1. Capture something fresh (Part 1)
+  2. Dashboard already running (Part 5)
+  3. Upload the file in the browser and show the verdict
+
+Fallback if the router does not cooperate live: upload one of the
+already saved .txt files instead.
+
+
+---------------------------------------------------------------------
+PART 7 - CHANGE THE WiFi NAME / PASSWORD LATER
+---------------------------------------------------------------------
+
+  idf.py menuconfig
+    -> Example Connection Configuration -> WiFi SSID
+    -> Example Connection Configuration -> WiFi Password
+    -> S to save, Q to quit
+
+  idf.py -p COM6 flash monitor
+
+Check the boot log for "wifi:connected with <new SSID>" and the new
+"got ip:" line. The IP changes after reconnects, so read it each session.
+
+
+---------------------------------------------------------------------
+PART 8 - PUBLISH TO GITHUB
+---------------------------------------------------------------------
+
+  cd C:\MyProjects\esp-csi
+
+  # keep the WiFi password out of the repo
+  Add-Content .gitignore "`nsdkconfig`nsdkconfig.old`n_dashboard_upload_*"
+
+  git add .
+  git status --short | Select-String "sdkconfig"      (must print nothing)
+
+  git commit -m "Add WiFi-CSI human activity and fall detection project (ESP32)"
+  git remote rename origin upstream
+  git remote add origin https://github.com/BhuvanB1405/wifi-csi-fall-detection.git
+  git branch --show-current
+  git push -u origin main                              (use master if that is the branch)
+
+  When asked to sign in: GitHub username + personal access token.
+
+
+---------------------------------------------------------------------
+TROUBLESHOOTING
+---------------------------------------------------------------------
+
+  "not buildable" CMake error      -> cd into the project folder first
+  "No CSI_DATA found"              -> use the raw .txt file, not the CSV
+  CSVs overwriting each other      -> keep Start-Sleep -Seconds 1 in the loop
+  "streamlit not recognized"       -> python -m pip install streamlit, then
+                                      python -m streamlit run dashboard.py
+  Very few CSI lines               -> normal: router limit, press RST and recapture
+  Wrong IP in ping tests           -> read the current IP from "got ip" in the log
