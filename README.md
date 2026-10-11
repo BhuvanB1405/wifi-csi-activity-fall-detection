@@ -35,12 +35,12 @@ This project is built on Espressif's [`esp-csi`](https://github.com/espressif/es
 | `csi_raw_*.txt`, `person1_01.txt` | Sample raw serial captures |
 | `WiFi_CSI_Fall_Detection_Report.docx` | Full project report |
 | `COMMANDS.txt` | Every command used, from setup to dashboard |
-| `Project_Presentation.pptx` | Slides presented to the faculty (rename to match your file) |
+| `Project_Presentation.pptx` | Slides presented to the faculty |
 | `dashboard_1.png` to `dashboard_5.png` | Dashboard screenshots |
 
 ## Dashboard
 
-The Streamlit dashboard classifies an uploaded capture and shows the overall verdict, a class breakdown chart, a per-reading table, and the raw `classify_batch.py` output. The screenshots below use a mixed capture (empty, walking and falling) of 126 readings.
+The Streamlit dashboard classifies an uploaded capture and shows the overall verdict, a class breakdown chart, a per-reading table, and the raw `classify_batch.py` output. The screenshots below use a mixed capture (empty, walking and falling) of 126 readings. The overall verdict is the most frequent class in the capture, so it shows WALKING here. The individual falling readings are still flagged as "FALL DETECTED" in the raw output.
 
 **1. Upload page**
 
@@ -110,7 +110,7 @@ The classes used for training are listed in `USABLE_LABELS` in `train_classifier
 
 **5. Classify a capture:**
 ```
-python classify_batch.py demo_falling.txt
+python classify_batch.py csi_raw_falling.txt
 ```
 
 **6. Run the dashboard:**
